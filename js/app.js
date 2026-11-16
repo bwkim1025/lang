@@ -446,6 +446,18 @@ function paint() {
   else if (model.kind === "practice") root.innerHTML = viewPractice(model);
   else root.innerHTML = viewMissing();
   ensureTicker();
+  if (ui.offerManual || ui.result?.evaluation?.manual) revealSelfCheck();
+}
+
+function revealSelfCheck() {
+  const card = document.querySelector(".selfcheck");
+  const bar = document.querySelector(".actions");
+  const main = document.querySelector(".main");
+  if (!card || !bar || !main || getComputedStyle(bar).position !== "fixed") return;
+  const cardBox = card.getBoundingClientRect();
+  const barBox = bar.getBoundingClientRect();
+  const covered = Math.min(cardBox.bottom, barBox.bottom) - Math.max(cardBox.top, barBox.top);
+  if (covered > 0) main.scrollTop += cardBox.bottom - barBox.top + 16;
 }
 
 function ensureTicker() {

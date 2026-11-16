@@ -1,4 +1,4 @@
-const CACHE = "pronounce-shell-v3";
+const CACHE = "pronounce-shell-v4";
 
 const ASSETS = [
   "./",
