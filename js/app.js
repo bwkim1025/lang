@@ -15,7 +15,7 @@ import {
   speak,
   startMediaRecorder,
 } from "./speech.js";
-import { buildStats, mistakeSounds, resumeIndex, reviewSentences } from "./stats.js";
+import { buildStats, listAttempts, mistakeSounds, resumeIndex, reviewSentences } from "./stats.js";
 import { loadProgress, recordAttempt, saveProgress, summarize } from "./storage.js";
 
 const RATINGS = [
@@ -227,6 +227,57 @@ function bars(count = 18) {
   }).join("");
 }
 
+function trackMark(track) {
+  return track.id === "ja" ? "あ" : "A";
+}
+
+function lessonListCard(track) {
+  const rows = track.lessons.map((lesson) => {
+    const summary = summarize(lesson.sentences.map((sentence) => sentence.id), progress);
+    const resume = resumeIndex(lesson, progress);
+    const width = summary.total ? Math.round((summary.practiced / summary.total) * 100) : 0;
+    const average = summary.average == null ? "기록 없음" : `평균 ${summary.average}`;
+    return `<a class="row" href="${practiceHash(track.id, lesson.id, resume)}"><span class="tile sm ${track.id === "ja" ? "jp" : "en"}">${trackMark(track)}</span><span class="tx"><span class="t1">${esc(lesson.title)}</span><span class="t2">${summary.practiced}/8 · ${esc(average)}</span></span><span class="bar" style="width:72px;height:6px;flex-shrink:0"><i style="width:${width}%"></i></span>${I.next}</a>`;
+  }).join("");
+  return `<section class="card"><div class="card-h"><h2>${esc(track.title)} 레슨</h2><a class="more" href="${lessonsHash(track.id)}">모두${I.next}</a></div><div>${rows}</div></section>`;
+}
+
+function sentenceListCard(track, lesson, index) {
+  const rows = lesson.sentences.map((sentence, itemIndex) => {
+    const record = progress.sentences?.[sentence.id];
+    const score = typeof record?.bestScore === "number"
+      ? `<span class="${scoreClass(record.bestScore)}">${record.bestScore}</span>`
+      : `<span class="tag plain">아직</span>`;
+    const current = itemIndex === index ? ` aria-current="true"` : "";
+    return `<a class="row"${current} href="${practiceHash(track.id, lesson.id, itemIndex)}"><span class="score" style="background:transparent; color:var(--mute); min-width:26px">${itemIndex + 1}</span><span class="tx"><span class="t1 ${track.id === "ja" ? "jp" : "en"}">${esc(surfaceText(sentence))}</span><span class="t2">${esc(sentence.meaning)}</span></span>${score}</a>`;
+  }).join("");
+  return `<section class="card"><div class="card-h"><h2>${esc(lesson.title)}</h2></div><div class="sentlist">${rows}</div></section>`;
+}
+
+function nextCards() {
+  const rows = TRACKS.map((track) => {
+    const place = progress.current?.trackId === track.id
+      ? currentPlace()
+      : { lesson: track.lessons[0], index: resumeIndex(track.lessons[0], progress) };
+    const sentence = place.lesson.sentences[place.index];
+    return `<a class="row" href="${practiceHash(track.id, place.lesson.id, place.index)}"><span class="tile sm ${track.id === "ja" ? "jp" : "en"}">${trackMark(track)}</span><span class="tx"><span class="t1 ${track.id === "ja" ? "jp" : "en"}">${esc(surfaceText(sentence))}</span><span class="t2">${esc(track.title)} · ${esc(place.lesson.title)} · ${place.index + 1}/8</span></span>${I.next}</a>`;
+  }).join("");
+  return `<section class="card"><div class="card-h"><h2>다음 문장</h2></div><div>${rows}</div></section>`;
+}
+
+function recentRecordsCard(limit = 6) {
+  const rows = listAttempts(progress).slice(-limit).reverse().map((attempt) => {
+    const found = findSentence(attempt.sentenceId);
+    if (!found) return "";
+    const badge = attempt.source === "manual"
+      ? `<span class="rate ${attempt.score >= 90 ? "good" : attempt.score < 60 ? "again" : ""}">${esc(manualLabel(attempt.score))}</span>`
+      : `<span class="${scoreClass(attempt.score)}">${attempt.score}</span>`;
+    return `<a class="row" href="${practiceHash(found.track.id, found.lesson.id, found.index)}"><span class="tile sm ${found.track.id === "ja" ? "jp" : "en"}">${trackMark(found.track)}</span><span class="tx"><span class="t1 ${found.track.id === "ja" ? "jp" : "en"}">${esc(surfaceText(found.sentence))}</span><span class="t2">${esc(relativeTime(attempt.at))} · ${esc(found.lesson.title)}</span></span>${badge}</a>`;
+  }).join("");
+  const body = rows || `<p class="empty">아직 기록이 없어요. 말하기를 하면 최근 연습이 여기에 모여요.</p>`;
+  return `<section class="card"><div class="card-h"><h2>최근 기록</h2><a class="more" href="${statsHash()}">기록${I.next}</a></div><div>${body}</div></section>`;
+}
+
 function viewHome() {
   const stats = buildStats(progress);
   const maxWeek = Math.max(1, ...stats.week.map((day) => day.count));
@@ -243,7 +294,8 @@ function viewHome() {
     ? reviews.map((row) => `<a class="row" href="${practiceHash(row.track.id, row.lesson.id, row.index)}"><span class="tile sm ${row.track.id === "ja" ? "jp" : "en"}">${row.track.id === "ja" ? "あ" : "A"}</span><span class="tx"><span class="t1 ${row.track.id === "ja" ? "jp" : "en"}">${esc(surfaceText(row.sentence))}</span><span class="t2">${esc(row.sentence.meaning)}</span></span><span class="${scoreClass(row.bestScore)}">${row.bestScore}</span>${I.next}</a>`).join("")
     : `<p class="empty">아직 복습할 문장이 없어요. 말하기를 하면 점수가 낮은 문장이 여기 모여요.</p>`;
   const chart = stats.week.map((day) => `<div class="col${day.today ? " today" : ""}"><i style="height:${Math.max(3, Math.round((day.count / maxWeek) * 100))}%"></i><span>${day.day}</span></div>`).join("");
-  const body = `<header class="top">${mark()}<h1>땡이네 발음 연습</h1></header><div class="home"><div class="colA"><section class="hero" aria-label="오늘 연습"><div class="l"><span class="lab">오늘 연습 · ${esc(stats.todayLabel)}</span><div class="big"><b>${stats.todayCount}</b><span>문장</span></div><div class="kpis"><span class="stat">${I.flame}연속 ${stats.streak}일</span><span class="stat">${I.chart}최근 7일 ${stats.weekTotal}문장</span></div></div><div class="week">${week}</div></section><div class="tracks">${tracks}</div></div><div class="colB"><section class="card"><div class="card-h"><h2>복습 · 최근 많이 틀린 문장</h2></div><div>${reviewHtml}</div></section><section class="card"><div class="card-h"><h2>최근 7일</h2><a class="more" href="${statsHash()}">기록 보기${I.next}</a></div><div class="chart" style="height:96px; grid-template-columns: repeat(7, 1fr)" role="img" aria-label="최근 7일 연습 문장 수">${chart}</div></section></div></div>`;
+  const rail = `<aside class="rail home-rail">${TRACKS.map((track) => lessonListCard(track)).join("")}</aside>`;
+  const body = `<header class="top">${mark()}<h1>땡이네 발음 연습</h1></header><div class="home">${rail}<div class="colA"><section class="hero" aria-label="오늘 연습"><div class="l"><span class="lab">오늘 연습 · ${esc(stats.todayLabel)}</span><div class="big"><b>${stats.todayCount}</b><span>문장</span></div><div class="kpis"><span class="stat">${I.flame}연속 ${stats.streak}일</span><span class="stat">${I.chart}최근 7일 ${stats.weekTotal}문장</span></div></div><div class="week">${week}</div></section><div class="tracks">${tracks}</div></div><div class="colB"><section class="card"><div class="card-h"><h2>복습 · 최근 많이 틀린 문장</h2></div><div>${reviewHtml}</div></section><section class="card"><div class="card-h"><h2>최근 7일</h2><a class="more" href="${statsHash()}">기록 보기${I.next}</a></div><div class="chart" style="height:96px; grid-template-columns: repeat(7, 1fr)" role="img" aria-label="최근 7일 연습 문장 수">${chart}</div></section></div></div>`;
   return shell("home", false, body);
 }
 
@@ -266,7 +318,9 @@ function viewLessons(model) {
     return `<a class="row" href="${practiceHash(track.id, lesson.id, index)}"><span class="score" style="background:transparent; color:var(--mute); min-width:26px">${index + 1}</span><span class="tx"><span class="t1 ${track.id === "ja" ? "jp" : "en"}">${esc(surfaceText(sentence))}</span><span class="t2">${esc(sentence.meaning)}</span></span>${score}</a>`;
   }).join("");
   const resume = resumeIndex(lesson, progress);
-  const body = `<header class="top"><h1>레슨</h1></header><div class="seg" role="group" aria-label="언어">${TRACKS.map((item) => `<a href="${lessonsHash(item.id)}" aria-pressed="${item.id === track.id}">${item.id === "ja" ? "あ 일본어" : "A 영어"}</a>`).join("")}</div><div class="lesson-wrap"><div class="lessons">${cards}</div><section class="card lesson-panel"><div class="card-h"><h2>${esc(lesson.title)}</h2></div><p class="mean">${esc(lesson.summary)}</p><div class="sentlist">${rows}</div><a class="btn primary" href="${practiceHash(track.id, lesson.id, resume)}">${I.play}${resume + 1}번째 문장부터 이어서</a></section></div>`;
+  const other = TRACKS.find((item) => item.id !== track.id);
+  const rail = `<aside class="rail lesson-rail">${lessonListCard(other)}${recentRecordsCard(5)}</aside>`;
+  const body = `<header class="top"><h1>레슨</h1></header><div class="seg" role="group" aria-label="언어">${TRACKS.map((item) => `<a href="${lessonsHash(item.id)}" aria-pressed="${item.id === track.id}">${item.id === "ja" ? "あ 일본어" : "A 영어"}</a>`).join("")}</div><div class="lesson-wrap"><div class="lessons">${cards}</div><section class="card lesson-panel"><div class="card-h"><h2>${esc(lesson.title)}</h2></div><p class="mean">${esc(lesson.summary)}</p><div class="sentlist">${rows}</div><a class="btn primary" href="${practiceHash(track.id, lesson.id, resume)}">${I.play}${resume + 1}번째 문장부터 이어서</a></section>${rail}</div>`;
   return shell("lessons", false, body);
 }
 
@@ -283,7 +337,8 @@ function viewStats() {
   const soundRows = sounds.length
     ? sounds.map((sound, index) => `<div class="row"><span class="rk">${index + 1}</span><span class="tx"><span class="t1">${esc(sound.label)}</span><span class="t2">${esc(sound.examples.join(", "))}</span></span><span class="bar"><i style="width:${Math.round((sound.count / sounds[0].count) * 100)}%"></i></span><span class="cnt">${sound.count}</span></div>`).join("")
     : `<p class="empty">아직 모을 발음이 없어요. 말하기를 하면 자주 틀린 소리가 여기 모여요.</p>`;
-  const body = `<header class="top"><h1>기록</h1></header><div class="stats"><div class="colA"><div class="sum"><div class="card"><span class="k">최근 7일</span><span class="v">${stats.weekTotal}<small>문장</small></span></div><div class="card"><span class="k">연속</span><span class="v">${stats.streak}<small>일</small></span></div><div class="card"><span class="k">평균 점수</span><span class="v">${stats.average == null ? "—" : stats.average}<small>점</small></span></div></div><section class="card"><div class="card-h"><h2>날짜별 연습량</h2><span class="tag plain" style="margin-left:auto">최근 14일</span></div><div class="chart" role="img" aria-label="최근 14일 연습 문장 수">${chart}</div></section></div><div class="colB"><section class="card"><div class="card-h"><h2>트랙별 평균</h2></div>${tracks}</section><section class="card top5"><div class="card-h"><h2>자주 틀리는 소리</h2></div><div>${soundRows}</div></section></div></div>`;
+  const rail = `<aside class="rail stats-rail">${nextCards()}${recentRecordsCard(8)}</aside>`;
+  const body = `<header class="top"><h1>기록</h1></header><div class="stats"><div class="colA"><div class="sum"><div class="card"><span class="k">최근 7일</span><span class="v">${stats.weekTotal}<small>문장</small></span></div><div class="card"><span class="k">연속</span><span class="v">${stats.streak}<small>일</small></span></div><div class="card"><span class="k">평균 점수</span><span class="v">${stats.average == null ? "—" : stats.average}<small>점</small></span></div></div><section class="card"><div class="card-h"><h2>날짜별 연습량</h2><span class="tag plain" style="margin-left:auto">최근 14일</span></div><div class="chart" role="img" aria-label="최근 14일 연습 문장 수">${chart}</div></section></div><div class="colB"><section class="card"><div class="card-h"><h2>트랙별 평균</h2></div>${tracks}</section><section class="card top5"><div class="card-h"><h2>자주 틀리는 소리</h2></div><div>${soundRows}</div></section></div>${rail}</div>`;
   return shell("stats", false, body);
 }
 
@@ -330,7 +385,8 @@ function viewPractice(model) {
   const sent = `<section class="card sent" aria-label="연습 문장"><div class="who"><span class="tile sm ${track.id === "ja" ? "jp" : "en"}">${track.id === "ja" ? "あ" : "A"}</span>${esc(track.title)} · 문장 ${index + 1}</div>${target}<p class="mean">${esc(sentence.meaning)}</p>${tip}${limit}<div class="ft">듣기 속도<div class="seg" role="group" aria-label="듣기 속도"><button type="button" data-action="speed" data-speed="0.7" aria-pressed="${slow}">느리게</button><button type="button" data-action="speed" data-speed="1" aria-pressed="${!slow}">보통</button></div></div></section>`;
   const actions = `<div class="actions">${live}${error}<div class="act-row"><button class="act" type="button" data-action="${ui.phase === "speaking" ? "stop-speak" : "listen"}" aria-pressed="${ui.phase === "speaking"}"><span class="ic">${I.speaker}</span>듣기<span class="speed">${esc(speedName(progress.speed))}</span></button><button class="act speak${listening ? " rec" : ""}" type="button" data-action="${speakAction}" aria-pressed="${listening}"><span class="ic">${listening ? I.stop : I.mic}</span>${speakLabel}</button><button class="act" type="button" data-action="play-mine" ${clip ? "" : "disabled"}><span class="ic">${I.play}</span>내 녹음<span class="speed">${esc(mineLabel)}</span></button></div></div>`;
   const audio = clip ? `<audio id="clip" class="clip" src="${esc(clip.url)}"></audio>` : "";
-  const body = `<div class="prac${unsupported ? " self" : ""}">${head}${banner}${sent}${actions}${result}${self}${mine}${recent}</div>${audio}`;
+  const rail = `<aside class="rail prac-rail">${sentenceListCard(track, lesson, index)}</aside>`;
+  const body = `<div class="prac${unsupported ? " self" : ""}">${rail}${head}${banner}${sent}${actions}<div class="side-stack">${result}${self}${mine}${recent}</div></div>${audio}`;
   return shell("practice", true, body);
 }
 
