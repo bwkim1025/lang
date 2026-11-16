@@ -432,6 +432,16 @@ const ENGLISH = {
 
 export const TRACKS = [JAPANESE, ENGLISH];
 
+export function findSentence(id) {
+  for (const track of TRACKS) {
+    for (const lesson of track.lessons) {
+      const index = lesson.sentences.findIndex((sentence) => sentence.id === id);
+      if (index >= 0) return { track, lesson, sentence: lesson.sentences[index], index };
+    }
+  }
+  return null;
+}
+
 export function getTrack(id) {
   return TRACKS.find((track) => track.id === id) || null;
 }

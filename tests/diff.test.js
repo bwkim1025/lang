@@ -79,7 +79,7 @@ test("english comparison ignores case and punctuation", () => {
   assert.ok(swapped.score < 100);
   const right = swapped.targetPieces.find((piece) => piece.text === "Right");
   const light = swapped.targetPieces.find((piece) => piece.text === "light");
-  assert.equal(right.status, "miss");
+  assert.equal(right.status, "bad");
   assert.equal(light.status, "ok");
   assert.match(swapped.hints.join(" "), /혀/);
 });
@@ -88,6 +88,6 @@ test("english contraction stays one word", () => {
   const sentence = findSentence("en-3-07");
   const result = evaluateAttempt(sentence, "I have never felt a fever");
   const contraction = result.targetPieces.find((piece) => piece.text === "I've");
-  assert.equal(contraction.status, "miss");
+  assert.equal(contraction.status, "bad");
   assert.match(result.hints.join(" "), /I've|V/);
 });

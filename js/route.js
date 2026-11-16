@@ -4,7 +4,15 @@ export function parseHash(hash) {
     .split("/")
     .filter(Boolean);
   if (parts.length === 0) return { name: "home" };
-  if (parts[0] === "track" && parts[1]) return { name: "track", trackId: decodeURIComponent(parts[1]) };
+  if (parts[0] === "stats") return { name: "stats" };
+  if (parts[0] === "lessons") {
+    return {
+      name: "lessons",
+      trackId: parts[1] ? decodeURIComponent(parts[1]) : null,
+      lessonId: parts[2] ? decodeURIComponent(parts[2]) : null,
+    };
+  }
+  if (parts[0] === "track" && parts[1]) return { name: "lessons", trackId: decodeURIComponent(parts[1]), lessonId: null };
   if (parts[0] === "practice" && parts[1] && parts[2]) {
     const index = Number.parseInt(parts[3] ?? "0", 10);
     return {
@@ -22,5 +30,14 @@ export function practiceHash(trackId, lessonId, index) {
 }
 
 export function trackHash(trackId) {
-  return `#/track/${encodeURIComponent(trackId)}`;
+  return `#/lessons/${encodeURIComponent(trackId)}`;
+}
+
+export function lessonsHash(trackId, lessonId) {
+  const base = `#/lessons/${encodeURIComponent(trackId)}`;
+  return lessonId ? `${base}/${encodeURIComponent(lessonId)}` : base;
+}
+
+export function statsHash() {
+  return "#/stats";
 }

@@ -10,7 +10,8 @@ const root = new URL("..", import.meta.url);
 test("routes stay inside the static site", () => {
   assert.deepEqual(parseHash(""), { name: "home" });
   assert.deepEqual(parseHash("#/"), { name: "home" });
-  assert.deepEqual(parseHash("#/track/ja"), { name: "track", trackId: "ja" });
+  assert.deepEqual(parseHash("#/track/ja"), { name: "lessons", trackId: "ja", lessonId: null });
+  assert.deepEqual(parseHash("#/stats"), { name: "stats" });
   assert.deepEqual(parseHash("#/practice/en/en-3/4"), {
     name: "practice",
     trackId: "en",
@@ -79,12 +80,13 @@ test("the shell is a root-relative PWA", () => {
   assert.match(worker, /const CACHE = "pronounce-shell-v\d+"/);
   const assets = [...worker.matchAll(/"(\.\/[^"]+)"/g)].map((match) => match[1]);
   assert.ok(assets.includes("./index.html"));
-  assert.ok(assets.includes("./fonts/PretendardVariable.woff2"));
+  assert.ok(assets.includes("./fonts/gothic-a1-korean-400.woff2"));
+  assert.ok(assets.includes("./fonts/NotoSansJP-Regular.woff2"));
   assert.ok(assets.includes("./fonts/NotoSansJP-Regular.woff2"));
   for (const asset of assets) {
     if (asset === "./") continue;
     readFileSync(new URL(asset.slice(2), root));
   }
-  assert.match(app, /자동으로 받아 적지 못합니다/);
+  assert.match(app, /음성 인식이 안 돼요/);
   assert.doesNotMatch(app, /lorem ipsum/i);
 });

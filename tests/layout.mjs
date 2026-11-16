@@ -62,26 +62,25 @@ try {
     await page.evaluate(() => document.fonts.ready);
     let info = await measure(page);
     assertFit(info, `home ${width}`);
-    if (!info.text.includes("발음 연습")) throw new Error(`home missing Korean at ${width}`);
+    if (!info.text.includes("땡이네 발음 연습")) throw new Error(`home missing Korean at ${width}`);
 
-    await page.click("a.track-card");
-    await page.waitForSelector("[data-screen='track']");
+    await page.goto(`${base}#/lessons/ja`, { waitUntil: "networkidle0" });
     info = await measure(page);
-    assertFit(info, `track ${width}`);
+    assertFit(info, `lessons ${width}`);
 
-    await page.click("a.lesson");
+    await page.goto(`${base}#/practice/ja/ja-1/0`, { waitUntil: "networkidle0" });
     await page.waitForSelector("[data-screen='practice']");
     info = await measure(page);
     assertFit(info, `ja practice ${width}`);
     const fonts = await page.evaluate(async () => {
       await document.fonts.ready;
       return {
-        pretendard: document.fonts.check("400 16px 'Pretendard Variable'"),
-        noto: document.fonts.check("400 32px 'Noto Sans JP'"),
+        gothic: document.fonts.check("400 16px 'Gothic A1'"),
+        noto: document.fonts.check("500 28px 'Noto Sans JP'"),
         ruby: document.querySelectorAll("rt").length,
       };
     });
-    if (!fonts.pretendard || !fonts.noto) throw new Error(`fonts missing at ${width}: ${JSON.stringify(fonts)}`);
+    if (!fonts.gothic || !fonts.noto) throw new Error(`fonts missing at ${width}: ${JSON.stringify(fonts)}`);
     if (!fonts.ruby) throw new Error(`furigana missing at ${width}`);
 
     await page.goto(`${base}#/practice/en/en-5/0`, { waitUntil: "networkidle0" });
@@ -90,13 +89,19 @@ try {
     const english = await page.evaluate(() => document.body.innerText);
     if (!english.includes("강세")) throw new Error(`stress note missing at ${width}`);
     const overlap = await page.evaluate(() => {
-      const header = document.querySelector(".site-header").getBoundingClientRect();
       const heading = document.querySelector("h1").getBoundingClientRect();
-      return { headerBottom: header.bottom, h1Top: heading.top, scrollY: window.scrollY };
+      return { h1Top: heading.top, scrollY: window.scrollY, text: heading.textContent };
     });
-    if (overlap.h1Top < overlap.headerBottom - 1) {
-      throw new Error(`heading under header at ${width}: ${JSON.stringify(overlap)}`);
+    if (overlap.h1Top < 0) {
+      throw new Error(`heading clipped at ${width}: ${JSON.stringify(overlap)}`);
     }
+    await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "dark" }]);
+    await page.goto(`${base}#/stats`, { waitUntil: "networkidle0" });
+    info = await measure(page);
+    assertFit(info, `stats dark ${width}`);
+    const dark = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    if (dark !== "rgb(21, 19, 19)") throw new Error(`dark background ${dark} at ${width}`);
+    await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "light" }]);
   }
 
   const fallback = await browser.newPage();
@@ -108,23 +113,24 @@ try {
   });
   await fallback.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
   await fallback.goto(`${base}#/practice/ja/ja-1/0`, { waitUntil: "networkidle0" });
-  const unsupported = await fallback.evaluate(() => document.body.innerText.includes("자동으로 받아 적지 못합니다"));
+  const unsupported = await fallback.evaluate(() => document.body.innerText.includes("음성 인식이 안 돼요"));
   if (!unsupported) throw new Error("fallback banner missing");
   await fallback.click("[data-action='record']");
-  await fallback.waitForFunction(() => document.body.innerText.includes("녹음 중"));
+  await fallback.waitForFunction(() => document.body.innerText.includes("듣고 있어요"));
   await new Promise((resolve) => setTimeout(resolve, 700));
   await fallback.click("[data-action='stop-record']");
   await fallback.waitForSelector("audio");
-  await fallback.click("[data-action='rate'][data-score='100']");
-  await fallback.waitForFunction(() => document.body.innerText.includes("100점"));
+  await fallback.click("[data-action='rate'][data-score='75']");
+  await fallback.waitForFunction(() => document.body.innerText.includes("보통"));
   await fallback.reload({ waitUntil: "networkidle0" });
   const after = await fallback.evaluate(() => ({
     text: document.body.innerText,
     raw: localStorage.getItem("pronounce.progress.v1"),
   }));
-  if (!after.text.includes("스스로")) throw new Error("manual rating did not survive refresh");
   const stored = JSON.parse(after.raw);
-  if (stored.sentences["ja-1-01"].bestScore !== 100) throw new Error("best score missing");
+  if (stored.sentences["ja-1-01"].bestScore !== 75) throw new Error("best score missing");
+  if (stored.sentences["ja-1-01"].attempts.at(-1).source !== "manual") throw new Error("manual attempt missing");
+  if (!after.text.includes("보통")) throw new Error("self rating missing after refresh");
   if (stored.version !== 1) throw new Error("version missing");
 
   const mocked = await browser.newPage();
@@ -147,7 +153,7 @@ try {
   await mocked.setViewport({ width: 1280, height: 800 });
   await mocked.goto(`${base}#/practice/en/en-1/0`, { waitUntil: "networkidle0" });
   await mocked.click("[data-action='speak']");
-  await mocked.waitForFunction(() => document.body.innerText.includes("다시 볼 곳"));
+  await mocked.waitForFunction(() => document.body.innerText.includes("알아들은 말"));
   const diff = await mocked.evaluate(() => document.body.innerText);
   if (!diff.includes("점")) throw new Error("recognition result missing");
   if (!diff.includes("Right")) throw new Error("target word missing from diff");

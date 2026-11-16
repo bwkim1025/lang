@@ -42,8 +42,31 @@ export function alignUnits(target, hyp) {
 
 export function scoreLabel(score) {
   if (score >= 90) return "아주 좋아요";
-  if (score >= 70) return "거의 맞아요";
-  return "한 번 더";
+  if (score >= 75) return "좋아요";
+  if (score >= 60) return "조금만 더";
+  return "다시 해 봐요";
+}
+
+export function manualLabel(score) {
+  if (score >= 90) return "잘함";
+  if (score >= 60) return "보통";
+  return "다시";
+}
+
+function groupPieces(pieces) {
+  const grouped = [];
+  for (const piece of pieces) {
+    if (!piece?.text) continue;
+    const status = piece.status || "neutral";
+    const last = grouped[grouped.length - 1];
+    if (last && last.status === status) last.text += piece.text;
+    else grouped.push({ text: piece.text, status });
+  }
+  return grouped;
+}
+
+function problem(status) {
+  return status === "bad" || status === "miss";
 }
 
 function similarity(matched, targetLen, hypLen) {
@@ -105,6 +128,8 @@ function finish(partial) {
     targetPieces: partial.targetPieces,
     heardPieces: partial.heardPieces,
     heardJoin: partial.heardJoin,
+    compareTarget: groupPieces(partial.compareTarget || partial.targetPieces || []),
+    compareHeard: groupPieces((partial.heardPieces || []).filter((piece) => piece.status !== "miss")),
     hints: partial.hints.slice(0, 3),
   };
 }
@@ -140,27 +165,35 @@ function evaluateJapanese(sentence, recognizedRaw) {
   }
   const { ops } = alignUnits(targetUnits, hypUnits);
   const targetOk = new Array(targetUnits.length).fill(false);
+  const charStatus = new Array(targetUnits.length).fill("miss");
   const heardPieces = [];
   let cursor = 0;
   for (const op of ops) {
     if (op.type === "equal") {
       targetOk[cursor] = true;
+      charStatus[cursor] = "ok";
       cursor += 1;
       heardPieces.push({ text: op.hyp, status: "ok" });
     } else if (op.type === "sub") {
+      charStatus[cursor] = "bad";
       cursor += 1;
-      heardPieces.push({ text: op.hyp, status: "miss" });
+      heardPieces.push({ text: op.hyp, status: "bad" });
     } else if (op.type === "del") {
+      charStatus[cursor] = "miss";
       cursor += 1;
     } else if (op.hyp) {
-      heardPieces.push({ text: op.hyp, status: "miss" });
+      heardPieces.push({ text: op.hyp, status: "bad" });
     }
   }
   const targetPieces = spans.map((span) => {
     if (!span.scored) return pieceFromToken(span.token, "neutral");
-    const ok = targetOk.slice(span.start, span.end).every(Boolean);
-    return pieceFromToken(span.token, ok ? "ok" : "miss");
+    const flags = charStatus.slice(span.start, span.end);
+    let status = "ok";
+    if (flags.some((flag) => flag === "bad")) status = "bad";
+    else if (flags.some((flag) => flag === "miss")) status = "miss";
+    return pieceFromToken(span.token, status);
   });
+  const compareTarget = targetUnits.map((text, index) => ({ text, status: charStatus[index] }));
   const matched = targetOk.filter(Boolean).length;
   const hints = [];
   const ratio = targetUnits.length ? matched / targetUnits.length : 0;
@@ -169,7 +202,7 @@ function evaluateJapanese(sentence, recognizedRaw) {
     pushHint(hints, sentence.tip);
   } else {
     for (const piece of targetPieces) {
-      if (piece.status === "miss" && piece.note) pushHint(hints, piece.note);
+      if (problem(piece.status) && piece.note) pushHint(hints, piece.note);
     }
     const missedChars = targetUnits.filter((char, index) => !targetOk[index]);
     const noted = hints.join(" ");
@@ -182,7 +215,7 @@ function evaluateJapanese(sentence, recognizedRaw) {
     if (missedChars.includes("ん") && !noted.includes("ん")) {
       pushHint(hints, "ん이 빠졌거나 약합니다. 코로 한 박자 울리고 다음 소리로 넘어가세요.");
     }
-    if (!hints.length && targetPieces.some((piece) => piece.status === "miss")) pushHint(hints, sentence.tip);
+    if (!hints.length && targetPieces.some((piece) => problem(piece.status))) pushHint(hints, sentence.tip);
   }
   return finish({
     matched,
@@ -191,6 +224,7 @@ function evaluateJapanese(sentence, recognizedRaw) {
     unitName: "글자",
     recognized: recognized.trim(),
     targetPieces,
+    compareTarget,
     heardPieces,
     heardJoin: "",
     hints,
@@ -238,16 +272,16 @@ function evaluateEnglish(sentence, recognizedRaw) {
   for (const op of ops) {
     if (op.type === "equal") {
       statuses.push("ok");
-      heardPieces.push({ text: hypWords[hypIndex].raw, status: "ok" });
+      heardPieces.push({ text: `${hypWords[hypIndex].raw} `, status: "ok" });
       hypIndex += 1;
     } else if (op.type === "sub") {
-      statuses.push("miss");
-      heardPieces.push({ text: hypWords[hypIndex].raw, status: "miss" });
+      statuses.push("bad");
+      heardPieces.push({ text: `${hypWords[hypIndex].raw} `, status: "bad" });
       hypIndex += 1;
     } else if (op.type === "del") {
       statuses.push("miss");
     } else {
-      heardPieces.push({ text: hypWords[hypIndex].raw, status: "miss" });
+      heardPieces.push({ text: `${hypWords[hypIndex].raw} `, status: "bad" });
       hypIndex += 1;
     }
   }
@@ -267,9 +301,9 @@ function evaluateEnglish(sentence, recognizedRaw) {
     pushHint(hints, sentence.tip);
   } else {
     for (const piece of targetPieces) {
-      if (piece.status === "miss" && piece.key && hintMap[piece.key]) pushHint(hints, hintMap[piece.key]);
+      if (problem(piece.status) && piece.key && hintMap[piece.key]) pushHint(hints, hintMap[piece.key]);
     }
-    if (!hints.length && targetPieces.some((piece) => piece.status === "miss")) pushHint(hints, sentence.tip);
+    if (!hints.length && targetPieces.some((piece) => problem(piece.status))) pushHint(hints, sentence.tip);
   }
   return finish({
     matched,
