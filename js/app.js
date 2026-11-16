@@ -8,15 +8,13 @@ import {
   getRecognitionCtor,
   micErrorMessage,
   openMic,
-  pickRecorderMime,
   pickVoice,
   recognitionErrorMessage,
-  runRecognition,
   speak,
-  startMediaRecorder,
 } from "./speech.js";
 import { buildStats, listAttempts, mistakeSounds, resumeIndex, reviewSentences } from "./stats.js";
 import { loadProgress, recordAttempt, saveProgress, summarize } from "./storage.js";
+import { createTake, isIosDevice } from "./take.js";
 
 const RATINGS = [
   { score: 100, label: "잘함", note: "다음 문장으로" },
@@ -351,7 +349,8 @@ function viewPractice(model) {
   const support = supportState();
   const unsupported = !support.recognition || !support.secure;
   const showBanner = unsupported && !progress.hideUnsupported;
-  const listening = ui.phase === "listening" || ui.phase === "recording";
+  const listening = ui.phase === "recording";
+  const busy = listening || ui.phase === "processing";
   const clip = clips.get(sentence.id);
   const slow = speedChoice(progress.speed) < 0.9;
   const record = progress.sentences?.[sentence.id];
@@ -372,18 +371,23 @@ function viewPractice(model) {
   const tip = sentence.tip ? `<div class="tips"><span class="tip">${esc(sentence.tip)}</span></div>` : "";
   const limit = lesson.note ? `<p class="mean">${esc(lesson.note)}</p>` : "";
   const banner = showBanner ? `<div class="banner"><span class="ic">${I.info}</span><span class="tx"><b>이 브라우저에서는 음성 인식이 안 돼요</b><span>녹음해서 모델과 비교하고 스스로 평가해 주세요.</span></span><button class="icon-btn" type="button" data-action="dismiss" aria-label="안내 닫기">${I.close}</button></div>` : "";
-  const error = ui.error ? `<p class="live" role="alert">${esc(ui.error)}</p>` : "";
-  const live = listening ? `<div class="live"><div class="wave" aria-hidden="true">${bars(16)}</div><span class="time" id="live-time">듣고 있어요 ${clock(Date.now() - ui.startedAt)}</span></div>` : "";
-  const speakLabel = listening ? "멈추기" : unsupported ? "녹음하기" : "말하기";
-  const speakAction = listening ? (ui.phase === "recording" ? "stop-record" : "stop-listen") : unsupported ? "record" : "speak";
-  const mineLabel = clip ? clock((clip.seconds || 0) * 1000) : "아직 없음";
+  const error = ui.error && !busy ? `<p class="live" role="alert">${esc(ui.error)}</p>` : "";
+  const liveLabel = ui.phase === "processing"
+    ? "결과를 정리하고 있어요"
+    : `듣고 있어요 ${clock(Date.now() - ui.startedAt)}`;
+  const live = busy ? `<div class="live"><div class="wave" aria-hidden="true">${bars(16)}</div><span class="time" id="live-time">${esc(liveLabel)}</span></div>` : "";
+  const speakLabel = listening ? "멈추기" : ui.phase === "processing" ? "잠시만요" : unsupported ? "녹음하기" : "말하기";
+  const speakAction = busy ? "stop-take" : unsupported ? "record" : "speak";
+  const iosNote = isIosDevice() && support.recognition ? `<p class="empty">아이폰에서는 말하기가 점수만 확인해요. 목소리는 오른쪽 녹음으로 따로 남기세요.</p>` : "";
+  const recordAside = isIosDevice() && support.recognition && support.recording && !clip && !busy;
+  const mineLabel = clip ? clock((clip.seconds || 0) * 1000) : recordAside ? "녹음" : "아직 없음";
   const result = evaluation && !manual ? resultCard(evaluation, best) : "";
   const self = unsupported || ui.offerManual || manual ? selfCard(manual ? evaluation.score : null) : "";
   const mine = mineCard(sentence, clip);
   const recent = recentCard(attempts, best);
   const head = `<div class="prac-head"><div class="top"><a class="icon-btn" href="${trackHash(track.id)}" aria-label="레슨 목록">${I.back}</a><h1>${esc(lesson.title)}</h1><span class="sp pos">${index + 1}/8</span>${prev ? `<a class="icon-btn" href="${practiceHash(track.id, prev.lessonId, prev.index)}" aria-label="이전 문장">${I.back}</a>` : `<button class="icon-btn" type="button" disabled aria-label="이전 문장">${I.back}</button>`}${next ? `<a class="icon-btn" href="${practiceHash(track.id, next.lessonId, next.index)}" aria-label="다음 문장">${I.next}</a>` : `<button class="icon-btn" type="button" disabled aria-label="다음 문장">${I.next}</button>`}</div><div class="steps" aria-hidden="true">${steps}</div></div>`;
   const sent = `<section class="card sent" aria-label="연습 문장"><div class="who"><span class="tile sm ${track.id === "ja" ? "jp" : "en"}">${track.id === "ja" ? "あ" : "A"}</span>${esc(track.title)} · 문장 ${index + 1}</div>${target}<p class="mean">${esc(sentence.meaning)}</p>${tip}${limit}<div class="ft">듣기 속도<div class="seg" role="group" aria-label="듣기 속도"><button type="button" data-action="speed" data-speed="0.7" aria-pressed="${slow}">느리게</button><button type="button" data-action="speed" data-speed="1" aria-pressed="${!slow}">보통</button></div></div></section>`;
-  const actions = `<div class="actions">${live}${error}<div class="act-row"><button class="act" type="button" data-action="${ui.phase === "speaking" ? "stop-speak" : "listen"}" aria-pressed="${ui.phase === "speaking"}"><span class="ic">${I.speaker}</span>듣기<span class="speed">${esc(speedName(progress.speed))}</span></button><button class="act speak${listening ? " rec" : ""}" type="button" data-action="${speakAction}" aria-pressed="${listening}"><span class="ic">${listening ? I.stop : I.mic}</span>${speakLabel}</button><button class="act" type="button" data-action="play-mine" ${clip ? "" : "disabled"}><span class="ic">${I.play}</span>내 녹음<span class="speed">${esc(mineLabel)}</span></button></div></div>`;
+  const actions = `${error}<div class="actions">${live}<div class="act-row"><button class="act" type="button" data-action="${ui.phase === "speaking" ? "stop-speak" : "listen"}" aria-pressed="${ui.phase === "speaking"}" ${busy ? "disabled" : ""}><span class="ic">${I.speaker}</span>듣기<span class="speed">${esc(speedName(progress.speed))}</span></button><button class="act speak${listening ? " rec" : ""}" type="button" data-action="${speakAction}" aria-pressed="${listening}" ${ui.phase === "processing" ? "disabled" : ""}><span class="ic">${listening ? I.stop : I.mic}</span>${speakLabel}</button><button class="act" type="button" data-action="${recordAside ? "record" : "play-mine"}" ${clip || recordAside ? "" : "disabled"}><span class="ic">${recordAside ? I.mic : I.play}</span>${recordAside ? "녹음" : "내 녹음"}<span class="speed">${esc(mineLabel)}</span></button></div>${iosNote}</div>`;
   const audio = clip ? `<audio id="clip" class="clip" src="${esc(clip.url)}"></audio>` : "";
   const rail = `<aside class="rail prac-rail">${sentenceListCard(track, lesson, index)}</aside>`;
   const body = `<div class="prac${unsupported ? " self" : ""}">${rail}${head}${banner}${sent}${actions}<div class="side-stack">${result}${self}${mine}${recent}</div></div>${audio}`;
@@ -442,6 +446,18 @@ function paint() {
   else if (model.kind === "practice") root.innerHTML = viewPractice(model);
   else root.innerHTML = viewMissing();
   ensureTicker();
+  if (ui.offerManual || ui.result?.evaluation?.manual) revealSelfCheck();
+}
+
+function revealSelfCheck() {
+  const card = document.querySelector(".selfcheck");
+  const bar = document.querySelector(".actions");
+  const main = document.querySelector(".main");
+  if (!card || !bar || !main || getComputedStyle(bar).position !== "fixed") return;
+  const cardBox = card.getBoundingClientRect();
+  const barBox = bar.getBoundingClientRect();
+  const covered = Math.min(cardBox.bottom, barBox.bottom) - Math.max(cardBox.top, barBox.top);
+  if (covered > 0) main.scrollTop += cardBox.bottom - barBox.top + 16;
 }
 
 function ensureTicker() {
@@ -466,25 +482,12 @@ function stopSpeaking() {
   if (ui.phase === "speaking") ui.phase = "idle";
 }
 
-function stopTracks(stream) {
-  try { stream?.getTracks().forEach((track) => track.stop()); } catch { /* ignore */ }
-}
-
 function abandonSession() {
-  const box = session;
+  const take = session;
   session = null;
-  if (!box) return;
-  box.abandoned = true;
-  window.clearTimeout(box.timer);
-  try { box.handle?.abort(); } catch { /* ignore */ }
-  try { box.recorder?.stop(); } catch { /* ignore */ }
-  stopTracks(box.stream);
-  if (ui.phase === "listening" || ui.phase === "recording") ui.phase = "idle";
-}
-
-async function takeClip(box) {
-  if (!box?.recorder) return null;
-  try { return await box.recorder.stop(); } catch { return null; }
+  if (!take) return;
+  ui.phase = "idle";
+  take.cancel?.();
 }
 
 function saveClip(sentenceId, info, seconds) {
@@ -505,7 +508,7 @@ function onListen(model, mode = "model") {
     paint();
     return;
   }
-  if (ui.phase === "listening" || ui.phase === "recording") return;
+  if (ui.phase === "recording" || ui.phase === "processing") return;
   if (mode === "mine") {
     document.getElementById("clip")?.play?.();
     return;
@@ -548,174 +551,96 @@ function onListen(model, mode = "model") {
   speakHandle = handle;
 }
 
-function onSpeak(model) {
+function beginTake(model, { recognition, recording }) {
   stopSpeaking();
-  abandonSession();
-  const Ctor = getRecognitionCtor(window);
-  if (!Ctor || !supportState().secure) {
+  const previous = session;
+  session = null;
+  previous?.cancel?.();
+  const ios = isIosDevice();
+  const take = createTake({
+    Recognition: recognition ? getRecognitionCtor(window) : null,
+    lang: model.track.lang,
+    continuous: ios,
+    wantRecording: Boolean(recording) && !(ios && recognition),
+    openMic: () => openMic(navigator.mediaDevices),
+    MediaRecorder: window.MediaRecorder,
+    isTypeSupported: typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported
+      ? (type) => MediaRecorder.isTypeSupported(type)
+      : null,
+  });
+  session = take;
+  ui.phase = "recording";
+  ui.startedAt = Date.now();
+  ui.heard = "";
+  ui.error = "";
+  ui.result = null;
+  ui.offerManual = false;
+  paint();
+  take.onPhase((phase) => {
+    if (session !== take || phase !== "processing" || ui.phase === "processing") return;
+    ui.phase = "processing";
+    paint();
+  });
+  take.start();
+  take.finished.then((result) => {
+    if (session !== take || result?.ignored) return;
+    session = null;
+    applyTakeResult(model, result);
+  });
+}
+
+function onSpeak(model) {
+  const support = supportState();
+  if (!getRecognitionCtor(window) || !support.secure) {
     ui.error = "이 브라우저에서는 음성 인식이 안 돼요. 녹음해서 비교해 주세요.";
     ui.offerManual = true;
     paint();
     return;
   }
-  const box = tokenBox(model.sentence.id);
-  box.micPromise = openMicPromise(box);
-  ui.phase = "listening";
-  ui.startedAt = Date.now();
-  ui.error = "";
-  ui.result = null;
-  session = box;
-  const handle = runRecognition({
-    Recognition: Ctor,
-    lang: model.track.lang,
-    onPartial: (text) => { if (session?.token === box.token) setLive(text); },
-    onFinal: (text) => { box.finalText = text; },
-    onError: (code) => { if (code && code !== "aborted") box.error = code; },
-    onEnd: () => { completeRecognition(box, model); },
-  });
-  if (!handle.ok) {
-    session = null;
-    box.abandoned = true;
-    ui.phase = "idle";
-    ui.error = "음성 인식을 시작하지 못했습니다. 녹음과 스스로 평가를 이용해 주세요.";
-    ui.offerManual = true;
+  beginTake(model, { recognition: true, recording: support.recording });
+}
+
+function onRecord(model) {
+  if (!supportState().recording || !supportState().secure) {
+    ui.error = "이 브라우저에서는 녹음 파일을 만들 수 없습니다.";
     paint();
     return;
   }
-  box.handle = handle;
-  box.timer = window.setTimeout(() => { if (session?.token === box.token) box.handle?.stop(); }, 20000);
-  paint();
+  beginTake(model, { recognition: false, recording: true });
 }
 
-function tokenBox(sentenceId) {
-  return {
-    token: {},
-    sentenceId,
-    completed: false,
-    abandoned: false,
-    finalText: "",
-    error: "",
-    micError: null,
-    stream: null,
-    recorder: null,
-    micPromise: Promise.resolve(null),
-  };
-}
-
-function openMicPromise(box) {
-  if (!supportState().recording) return Promise.resolve(null);
-  return openMic(navigator.mediaDevices).then((stream) => {
-    if (box.abandoned) {
-      stopTracks(stream);
-      return null;
-    }
-    try {
-      const mime = pickRecorderMime(typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported
-        ? (type) => MediaRecorder.isTypeSupported(type)
-        : null);
-      box.stream = stream;
-      box.recorder = startMediaRecorder(window.MediaRecorder, stream, mime);
-      return box.recorder;
-    } catch (error) {
-      box.micError = error;
-      stopTracks(stream);
-      return null;
-    }
-  }).catch((error) => {
-    box.micError = error;
-    return null;
-  });
-}
-
-function setLive(text) {
-  const node = document.getElementById("live-time");
-  if (node) node.textContent = text;
-}
-
-async function completeRecognition(box, model) {
-  if (box.completed) return;
-  box.completed = true;
-  try { await box.micPromise; } catch { /* stored */ }
-  if (box.abandoned) return;
-  window.clearTimeout(box.timer);
-  if (session?.token === box.token) session = null;
+function applyTakeResult(model, result) {
   const seconds = ui.startedAt ? (Date.now() - ui.startedAt) / 1000 : 0;
-  const clip = await takeClip(box);
-  stopTracks(box.stream);
-  if (box.abandoned) return;
   ui.phase = "idle";
-  if (clip?.blob) saveClip(box.sentenceId, clip, seconds);
+  if (result?.clip?.blob) saveClip(model.sentence.id, result.clip, seconds);
   const current = activeSentence();
-  if (!current || current.sentence.id !== box.sentenceId) {
+  if (!current || current.sentence.id !== model.sentence.id) {
     paint();
     return;
   }
-  if (box.finalText) {
-    const evaluation = evaluateAttempt(model.sentence, box.finalText);
-    progress = recordAttempt(progress, box.sentenceId, {
+  if (result?.finalText) {
+    const evaluation = evaluateAttempt(model.sentence, result.finalText);
+    progress = recordAttempt(progress, model.sentence.id, {
       at: new Date().toISOString(),
       score: evaluation.score,
       recognized: evaluation.recognized,
       source: "recognition",
     });
     persist();
-    ui.result = { sentenceId: box.sentenceId, evaluation };
+    ui.result = { sentenceId: model.sentence.id, evaluation };
     ui.offerManual = false;
-    ui.error = box.micError ? micErrorMessage(box.micError) : "";
+    ui.error = result.micError ? micErrorMessage(result.micError) : "";
   } else {
     ui.result = null;
     ui.offerManual = true;
-    ui.error = (box.error && recognitionErrorMessage(box.error)) || "말을 알아듣지 못했습니다. 녹음으로 비교하거나 스스로 점수를 남겨 주세요.";
+    const permission = result?.error === "not-allowed" || result?.error === "service-not-allowed";
+    ui.error = permission
+      ? recognitionErrorMessage(result.error)
+      : result?.clip?.blob
+        ? "말을 알아듣지 못했어요. 녹음을 듣고 스스로 점수를 남겨 주세요."
+        : "말을 알아듣지 못했어요. 스스로 점수를 남겨 주세요.";
+    if (!result?.clip?.blob && result?.micError) ui.error = micErrorMessage(result.micError);
   }
-  paint();
-}
-
-function onRecord(model) {
-  stopSpeaking();
-  abandonSession();
-  if (!supportState().recording || !supportState().secure) {
-    ui.error = "이 브라우저에서는 녹음 파일을 만들 수 없습니다.";
-    paint();
-    return;
-  }
-  const box = tokenBox(model.sentence.id);
-  box.mode = "record";
-  ui.phase = "recording";
-  ui.startedAt = Date.now();
-  ui.error = "";
-  session = box;
-  paint();
-  box.micPromise = openMic(navigator.mediaDevices);
-  box.micPromise.then((stream) => {
-    if (box.abandoned || session?.token !== box.token) {
-      stopTracks(stream);
-      return;
-    }
-    const mime = pickRecorderMime(typeof MediaRecorder !== "undefined" ? (type) => MediaRecorder.isTypeSupported(type) : null);
-    box.stream = stream;
-    box.recorder = startMediaRecorder(window.MediaRecorder, stream, mime);
-    box.timer = window.setTimeout(() => { if (session?.token === box.token) stopRecording(box); }, 20000);
-  }).catch((error) => {
-    if (box.abandoned) return;
-    session = null;
-    ui.phase = "idle";
-    ui.error = micErrorMessage(error);
-    paint();
-  });
-}
-
-async function stopRecording(box) {
-  if (!box || box.abandoned) return;
-  box.abandoned = true;
-  if (session?.token === box.token) session = null;
-  window.clearTimeout(box.timer);
-  const seconds = ui.startedAt ? (Date.now() - ui.startedAt) / 1000 : 0;
-  const clip = await takeClip(box);
-  stopTracks(box.stream);
-  if (clip?.blob) saveClip(box.sentenceId, clip, seconds);
-  ui.phase = "idle";
-  ui.offerManual = true;
-  ui.error = clip?.blob ? "" : "녹음을 마무리하지 못했습니다.";
   paint();
 }
 
@@ -788,9 +713,8 @@ function onClick(event) {
   if (action === "listen") onListen(model, "model");
   else if (action === "stop-speak") { stopSpeaking(); paint(); }
   else if (action === "speak") onSpeak(model);
-  else if (action === "stop-listen") session?.handle?.stop();
+  else if (action === "stop-take") session?.stop?.();
   else if (action === "record") onRecord(model);
-  else if (action === "stop-record") stopRecording(session);
   else if (action === "rate") onRate(model, button.dataset.score);
   else if (action === "download") onDownload(model);
   else if (action === "play-mine") onListen(model, "mine");

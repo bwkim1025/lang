@@ -1,4 +1,4 @@
-const CACHE = "pronounce-shell-v3";
+const CACHE = "pronounce-shell-v4";
 
 const ASSETS = [
   "./",
@@ -14,6 +14,7 @@ const ASSETS = [
   "./js/speech.js",
   "./js/stats.js",
   "./js/storage.js",
+  "./js/take.js",
   "./icons/favicon.ico",
   "./icons/icon.svg",
   "./icons/favicon-32.png",

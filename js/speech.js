@@ -91,12 +91,12 @@ export function speak({ synth, Utterance, text, lang, rate, voice, onend, onerro
   };
 }
 
-export function runRecognition({ Recognition, lang, onPartial, onFinal, onError, onEnd }) {
+export function runRecognition({ Recognition, lang, continuous = false, onPartial, onFinal, onError, onEnd }) {
   if (typeof Recognition !== "function") return { ok: false, reason: "unsupported" };
   const recognition = new Recognition();
   recognition.lang = lang;
   recognition.interimResults = true;
-  recognition.continuous = false;
+  recognition.continuous = Boolean(continuous);
   recognition.maxAlternatives = 1;
   let finalText = "";
   let interim = "";
@@ -108,10 +108,10 @@ export function runRecognition({ Recognition, lang, onPartial, onFinal, onError,
     if (text) onFinal?.(text);
     onEnd?.();
   };
-  recognition.addEventListener("result", (event) => {
+  const onResult = (event) => {
     let nextFinal = "";
     let nextInterim = "";
-    const results = event.results || [];
+    const results = event?.results || [];
     for (let index = 0; index < results.length; index += 1) {
       const piece = results[index]?.[0]?.transcript || "";
       if (results[index].isFinal) nextFinal += piece;
@@ -121,11 +121,20 @@ export function runRecognition({ Recognition, lang, onPartial, onFinal, onError,
     interim = nextInterim.trim();
     const live = `${finalText} ${interim}`.replace(/\s+/g, " ").trim();
     if (live) onPartial?.(live);
-  });
-  recognition.addEventListener("error", (event) => {
-    onError?.(event?.error || "unknown");
-  });
+  };
+  const onRecognitionError = (event) => {
+    const code = event?.error || "unknown";
+    onError?.(code);
+    if (code === "no-speech" || code === "no-match") finish();
+  };
+  recognition.addEventListener("result", onResult);
+  recognition.addEventListener("error", onRecognitionError);
   recognition.addEventListener("end", finish);
+  recognition.addEventListener("nomatch", () => onRecognitionError({ error: "no-match" }));
+  recognition.onresult = onResult;
+  recognition.onerror = onRecognitionError;
+  recognition.onend = finish;
+  recognition.onnomatch = () => onRecognitionError({ error: "no-match" });
   try {
     recognition.start();
   } catch (error) {
@@ -137,8 +146,8 @@ export function runRecognition({ Recognition, lang, onPartial, onFinal, onError,
       try { recognition.stop(); } catch { finish(); }
     },
     abort() {
-      settled = true;
       try { recognition.abort(); } catch { /* ignore */ }
+      finish();
     },
   };
 }
@@ -175,12 +184,25 @@ export function startMediaRecorder(MediaRecorderImpl, stream, mimeType) {
   recorder.addEventListener("dataavailable", (event) => {
     if (event.data && event.data.size) chunks.push(event.data);
   });
-  recorder.start();
+  try {
+    recorder.start(250);
+  } catch {
+    recorder.start();
+  }
+  const mime = () => recorder.mimeType || mimeType || "audio/webm";
   return {
+    requestData() {
+      try { recorder.requestData?.(); } catch { /* ignore */ }
+    },
+    snapshot() {
+      if (!chunks.length) return null;
+      const type = mime();
+      return { blob: new Blob(chunks, { type }), mimeType: type };
+    },
     stop() {
       return new Promise((resolve, reject) => {
         const pack = () => {
-          const type = recorder.mimeType || mimeType || "audio/webm";
+          const type = mime();
           resolve({ blob: new Blob(chunks, { type }), mimeType: type });
         };
         if (recorder.state === "inactive") {

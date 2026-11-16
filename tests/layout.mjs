@@ -118,7 +118,7 @@ try {
   await fallback.click("[data-action='record']");
   await fallback.waitForFunction(() => document.body.innerText.includes("듣고 있어요"));
   await new Promise((resolve) => setTimeout(resolve, 700));
-  await fallback.click("[data-action='stop-record']");
+  await fallback.click("[data-action='stop-take']");
   await fallback.waitForSelector("audio");
   await fallback.click("[data-action='rate'][data-score='75']");
   await fallback.waitForFunction(() => document.body.innerText.includes("보통"));
