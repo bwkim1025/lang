@@ -323,9 +323,74 @@ audio.clip { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-ev
   .chart { height: 200px; gap: 10px; }
   .chart .col i { max-width: 30px; }
 }
-@container sy (min-width: 1600px) {
-  .wrap { max-width: 1400px; }
-  .home { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
+/* 넓은 화면에서만 쓰는 열. 1599px 이하에서는 자리만 잡고 보이지 않는다. */
+.rail { display: none; }
+.side-stack { display: contents; }
+
+/* ============================================================
+   넓은 PC (스터디 앱 v3.5와 같은 방식). 1599px 이하는 이 블록의 영향이 없다.
+   - 1600px 이상: 본문 폭 상한을 없애고 2열. 글이 있는 열은 한 줄 길이를 유지하고, 남는 폭은 옆 열이 채운다.
+   - 2400px 이상: 3열. 레슨 목록, 다음 문장, 최근 기록이 빈칸 없이 옆을 채운다.
+   - 3200–4799px: 본문 글자만 한 단계 키움. 4800px 이상에서는 이 규칙을 쓰지 않는다.
+   - 4800px 이상: 화면을 확대해 2560 구성을 유지. 미디어쿼리는 실제 뷰포트 폭을 보므로 초광폭 규칙은 4799px에서 끊는다.
+     4800–6399 zoom 2, 6400–7679 zoom 2.5, 7680 이상 zoom 3 (7680 → 2560).
+     이 앱은 화면 높이를 100dvh로 고정하므로, 확대 배율만큼 높이만 나눠 7680×2160에 2560 구성이 들어가게 한다.
+   - 색·글꼴(고딕 A1, 로즈 1.1)·카드 모양은 그대로. 박스 안에 박스는 없다.
+   ============================================================ */
+@media (min-width: 1600px) {
+  .main, .wrap { min-width: 0; }
+  .wrap { max-width: none; margin-inline: 0; }
+  .mean, .hint, .cmp-txt, .empty, .banner .tx { max-width: 40em; }
+  .chart .col i { max-width: 44px; }
+  .home { grid-template-columns: minmax(0, 760px) minmax(340px, 1fr); }
+  .lesson-wrap { grid-template-columns: minmax(300px, 1fr) minmax(0, 760px); }
+  .stats { grid-template-columns: minmax(360px, 1fr) minmax(0, 720px); }
+  .prac {
+    grid-template-columns: minmax(0, 760px) minmax(340px, 1fr);
+    grid-template-areas: "head head" "banner banner" "sent side" "act side";
+  }
+  .prac:not(:has(.banner)) { grid-template-areas: "head head" "sent side" "act side"; }
+  .side-stack { display: flex; flex-direction: column; gap: 20px; grid-area: side; min-width: 0; }
+}
+@media (min-width: 2400px) {
+  .wrap { padding: 32px 48px 48px; gap: 24px; }
+  .rail { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+  .home { grid-template-columns: minmax(280px, 0.9fr) minmax(0, 800px) minmax(320px, 1fr); gap: 24px; }
+  .lesson-wrap { grid-template-columns: minmax(280px, 0.9fr) minmax(0, 800px) minmax(300px, 1fr); gap: 24px; }
+  .stats { grid-template-columns: minmax(320px, 1.15fr) minmax(0, 800px) minmax(300px, 1fr); gap: 24px; }
+  .prac {
+    grid-template-columns: minmax(280px, 0.85fr) minmax(0, 800px) minmax(320px, 1fr);
+    grid-template-areas: "rail head head" "rail banner banner" "rail sent side" "rail act side";
+    gap: 24px;
+  }
+  .prac:not(:has(.banner)) { grid-template-areas: "rail head head" "rail sent side" "rail act side"; }
+  .prac-rail { grid-area: rail; }
+  .prac-rail .row[aria-current="true"] { background: var(--c-s); margin-inline: -8px; padding-inline: 8px; border-radius: 12px; }
+  .side-stack { gap: 24px; }
+}
+@media (min-width: 3200px) and (max-width: 4799.98px) {
+  .wrap { padding: 40px 64px 56px; gap: 28px; }
+  .home { grid-template-columns: minmax(360px, 1fr) minmax(0, 860px) minmax(400px, 1.15fr); gap: 32px; }
+  .lesson-wrap { grid-template-columns: minmax(340px, 0.95fr) minmax(0, 860px) minmax(360px, 1fr); gap: 32px; }
+  .stats { grid-template-columns: minmax(380px, 1.2fr) minmax(0, 860px) minmax(360px, 1fr); gap: 32px; }
+  .prac { grid-template-columns: minmax(340px, 0.9fr) minmax(0, 860px) minmax(380px, 1fr); gap: 32px; }
+  .rail, .side-stack { gap: 32px; }
+  .chart .col i { max-width: 64px; }
+  .mean, .hint, .empty, .cmp-txt, .banner .tx { font-size: 18px; }
+  .card-h h2 { font-size: 18px; }
+  .target { font-size: 40px; }
+}
+@media (min-width: 4800px) {
+  html { zoom: 2; }
+  #app.sy { height: calc(100dvh / 2); }
+}
+@media (min-width: 6400px) {
+  html { zoom: 2.5; }
+  #app.sy { height: calc(100dvh / 2.5); }
+}
+@media (min-width: 7680px) {
+  html { zoom: 3; }
+  #app.sy { height: calc(100dvh / 3); }
 }
 @media (prefers-reduced-motion: reduce) {
   .act.speak.rec .ic::before, .act.speak.rec .ic::after, .live .wave i { animation: none; }
