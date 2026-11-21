@@ -119,3 +119,41 @@ test("a recorder that never stops still releases the take", async () => {
   assert.equal(result.finalText, "");
   assert.ok(result.clip?.blob?.size > 0);
 });
+
+test("recording-only time starts after permission arrives", async () => {
+  let grant;
+  let released = false;
+  const take = createTake({
+    openMic: () => new Promise((resolve) => { grant = resolve; }),
+    MediaRecorder: HangingRecorder,
+    maxMs: 25,
+    recorderStopMs: 10,
+  });
+  take.start();
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(take.phase, "preparing");
+  grant({ getTracks: () => [{ stop() { released = true; } }] });
+  const result = await take.finished;
+  assert.equal(result.reason, "max");
+  assert.ok(result.clip?.blob.size);
+  assert.equal(released, true);
+});
+
+test("denial ends a recording-only attempt and delayed permission after cancel releases the mic", async () => {
+  const denied = new Error("permission denied");
+  const take = createTake({ openMic: async () => { throw denied; } });
+  take.start();
+  const result = await take.finished;
+  assert.equal(result.reason, "error");
+  assert.equal(result.micError, denied);
+
+  let grant;
+  let released = false;
+  const pending = createTake({ openMic: () => new Promise((resolve) => { grant = resolve; }) });
+  pending.start();
+  const cancelled = await pending.cancel();
+  grant({ getTracks: () => [{ stop() { released = true; } }] });
+  await Promise.resolve();
+  assert.equal(cancelled.ignored, true);
+  assert.equal(released, true);
+});

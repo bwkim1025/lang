@@ -1,4 +1,4 @@
-const CACHE = "pronounce-shell-v4";
+const CACHE = "pronounce-shell-v5";
 
 const ASSETS = [
   "./",
@@ -25,21 +25,9 @@ const ASSETS = [
   "./icons/icon-maskable-512.png",
   "./fonts/NotoSansJP-Regular.woff2",
   "./fonts/gothic-a1-korean-400.woff2",
-  "./fonts/gothic-a1-korean-500.woff2",
-  "./fonts/gothic-a1-korean-600.woff2",
-  "./fonts/gothic-a1-korean-700.woff2",
-  "./fonts/gothic-a1-korean-800.woff2",
   "./fonts/gothic-a1-latin-400.woff2",
-  "./fonts/gothic-a1-latin-500.woff2",
-  "./fonts/gothic-a1-latin-600.woff2",
-  "./fonts/gothic-a1-latin-700.woff2",
-  "./fonts/gothic-a1-latin-800.woff2",
   "./fonts/noto-sans-latin-400.woff2",
-  "./fonts/noto-sans-latin-500.woff2",
-  "./fonts/noto-sans-latin-700.woff2",
   "./fonts/noto-sans-latin-ext-400.woff2",
-  "./fonts/noto-sans-latin-ext-500.woff2",
-  "./fonts/noto-sans-latin-ext-700.woff2",
 ];
 
 self.addEventListener("install", (event) => {
@@ -50,7 +38,7 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => /^pronounce-shell-v\d+$/.test(key) && key !== CACHE).map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
   );
 });
@@ -59,7 +47,7 @@ self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.method !== "GET") return;
   const url = new URL(request.url);
-  if (url.origin !== self.location.origin) return;
+  if (!url.href.startsWith(self.registration.scope)) return;
   event.respondWith(fromCacheOrNetwork(request));
 });
 
@@ -74,6 +62,12 @@ async function fromCacheOrNetwork(request) {
   } catch (error) {
     if (request.mode === "navigate") {
       return (await cache.match("./index.html")) || (await cache.match("./")) || Response.error();
+    }
+    // The shell keeps a regular face per script; extra weights are cached on first use.
+    const font = new URL(request.url).pathname.match(/\/fonts\/((?:gothic-a1-(?:korean|latin)|noto-sans-(?:latin|latin-ext)))-(?:500|600|700|800)\.woff2$/);
+    if (font) {
+      const regular = await cache.match(`./fonts/${font[1]}-400.woff2`);
+      if (regular) return regular;
     }
     throw error;
   }

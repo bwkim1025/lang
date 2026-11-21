@@ -55,7 +55,7 @@ const ui = {
 let progress = null;
 let session = null;
 let speakHandle = null;
-let cancelSpeak = false;
+let speechTurn = 0;
 let ticker = 0;
 const clips = new Map();
 
@@ -191,7 +191,7 @@ function practiceHrefFor(track) {
 
 function shell(active, focus, body) {
   const menu = nav(active);
-  return `<div class="app${focus ? " focus" : ""}" data-screen="${active}">${menu.side}<main class="main"><div class="wrap">${body}</div></main>${menu.tabs}</div>`;
+  return `<div class="app${focus ? " focus" : ""}" data-screen="${active}">${menu.side}<main class="main" tabindex="-1"><div class="wrap">${body}</div></main>${menu.tabs}</div>`;
 }
 
 function rubyHtml(sentence) {
@@ -350,7 +350,8 @@ function viewPractice(model) {
   const unsupported = !support.recognition || !support.secure;
   const showBanner = unsupported && !progress.hideUnsupported;
   const listening = ui.phase === "recording";
-  const busy = listening || ui.phase === "processing";
+  const preparing = ui.phase === "preparing";
+  const busy = preparing || listening || ui.phase === "processing";
   const clip = clips.get(sentence.id);
   const slow = speedChoice(progress.speed) < 0.9;
   const record = progress.sentences?.[sentence.id];
@@ -374,9 +375,9 @@ function viewPractice(model) {
   const error = ui.error && !busy ? `<p class="live" role="alert">${esc(ui.error)}</p>` : "";
   const liveLabel = ui.phase === "processing"
     ? "결과를 정리하고 있어요"
-    : `듣고 있어요 ${clock(Date.now() - ui.startedAt)}`;
-  const live = busy ? `<div class="live"><div class="wave" aria-hidden="true">${bars(16)}</div><span class="time" id="live-time">${esc(liveLabel)}</span></div>` : "";
-  const speakLabel = listening ? "멈추기" : ui.phase === "processing" ? "잠시만요" : unsupported ? "녹음하기" : "말하기";
+    : preparing ? "마이크 연결을 기다리고 있어요" : `듣고 있어요 ${clock(Date.now() - ui.startedAt)}`;
+  const live = busy ? `<div class="live${listening ? "" : " waiting"}">${listening ? `<div class="wave" aria-hidden="true">${bars(16)}</div>` : ""}<span class="time" id="live-time">${esc(liveLabel)}</span></div>` : "";
+  const speakLabel = preparing ? "취소" : listening ? "멈추기" : ui.phase === "processing" ? "잠시만요" : unsupported ? "녹음하기" : "말하기";
   const speakAction = busy ? "stop-take" : unsupported ? "record" : "speak";
   const iosNote = isIosDevice() && support.recognition ? `<p class="empty">아이폰에서는 말하기가 점수만 확인해요. 목소리는 오른쪽 녹음으로 따로 남기세요.</p>` : "";
   const recordAside = isIosDevice() && support.recognition && support.recording && !clip && !busy;
@@ -387,7 +388,7 @@ function viewPractice(model) {
   const recent = recentCard(attempts, best);
   const head = `<div class="prac-head"><div class="top"><a class="icon-btn" href="${trackHash(track.id)}" aria-label="레슨 목록">${I.back}</a><h1>${esc(lesson.title)}</h1><span class="sp pos">${index + 1}/8</span>${prev ? `<a class="icon-btn" href="${practiceHash(track.id, prev.lessonId, prev.index)}" aria-label="이전 문장">${I.back}</a>` : `<button class="icon-btn" type="button" disabled aria-label="이전 문장">${I.back}</button>`}${next ? `<a class="icon-btn" href="${practiceHash(track.id, next.lessonId, next.index)}" aria-label="다음 문장">${I.next}</a>` : `<button class="icon-btn" type="button" disabled aria-label="다음 문장">${I.next}</button>`}</div><div class="steps" aria-hidden="true">${steps}</div></div>`;
   const sent = `<section class="card sent" aria-label="연습 문장"><div class="who"><span class="tile sm ${track.id === "ja" ? "jp" : "en"}">${track.id === "ja" ? "あ" : "A"}</span>${esc(track.title)} · 문장 ${index + 1}</div>${target}<p class="mean">${esc(sentence.meaning)}</p>${tip}${limit}<div class="ft">듣기 속도<div class="seg" role="group" aria-label="듣기 속도"><button type="button" data-action="speed" data-speed="0.7" aria-pressed="${slow}">느리게</button><button type="button" data-action="speed" data-speed="1" aria-pressed="${!slow}">보통</button></div></div></section>`;
-  const actions = `${error}<div class="actions">${live}<div class="act-row"><button class="act" type="button" data-action="${ui.phase === "speaking" ? "stop-speak" : "listen"}" aria-pressed="${ui.phase === "speaking"}" ${busy ? "disabled" : ""}><span class="ic">${I.speaker}</span>듣기<span class="speed">${esc(speedName(progress.speed))}</span></button><button class="act speak${listening ? " rec" : ""}" type="button" data-action="${speakAction}" aria-pressed="${listening}" ${ui.phase === "processing" ? "disabled" : ""}><span class="ic">${listening ? I.stop : I.mic}</span>${speakLabel}</button><button class="act" type="button" data-action="${recordAside ? "record" : "play-mine"}" ${clip || recordAside ? "" : "disabled"}><span class="ic">${recordAside ? I.mic : I.play}</span>${recordAside ? "녹음" : "내 녹음"}<span class="speed">${esc(mineLabel)}</span></button></div>${iosNote}</div>`;
+  const actions = `<div class="actions">${error}${live}<div class="act-row"><button class="act" type="button" data-action="${ui.phase === "speaking" ? "stop-speak" : "listen"}" aria-pressed="${ui.phase === "speaking"}" ${busy ? "disabled" : ""}><span class="ic">${ui.phase === "speaking" ? I.stop : I.speaker}</span>${ui.phase === "speaking" ? "재생 중지" : "듣기"}<span class="speed">${esc(speedName(progress.speed))}</span></button><button class="act speak${listening ? " rec" : ""}" type="button" data-action="${speakAction}" aria-pressed="${listening}" ${ui.phase === "processing" ? "disabled" : ""}><span class="ic">${listening || preparing ? I.stop : I.mic}</span>${speakLabel}</button><button class="act" type="button" data-action="${recordAside ? "record" : "play-mine"}" ${(clip || recordAside) && !busy ? "" : "disabled"}><span class="ic">${recordAside ? I.mic : I.play}</span>${recordAside ? "녹음" : "내 녹음"}<span class="speed">${esc(mineLabel)}</span></button></div>${iosNote}</div>`;
   const audio = clip ? `<audio id="clip" class="clip" src="${esc(clip.url)}"></audio>` : "";
   const rail = `<aside class="rail prac-rail">${sentenceListCard(track, lesson, index)}</aside>`;
   const body = `<div class="prac${unsupported ? " self" : ""}">${rail}${head}${banner}${sent}${actions}<div class="side-stack">${result}${self}${mine}${recent}</div></div>${audio}`;
@@ -408,8 +409,9 @@ function selfCard(selected) {
 }
 
 function mineCard(sentence, clip) {
-  const mode = ui.playMode;
-  return `<section class="card mine" aria-label="내 녹음"><div class="card-h"><h2>내 녹음</h2>${clip ? `<span class="tag plain" style="margin-left:auto">${esc(clock((clip.seconds || 0) * 1000))}</span>` : ""}</div><div class="wavebox"><button class="icon-btn" type="button" data-action="play-selected" aria-label="내 녹음 재생" ${clip || mode === "model" ? "" : "disabled"} style="background:var(--c-s); color:var(--c-t); border-radius:50%">${I.play}</button><div class="mini" aria-hidden="true">${bars(28)}</div></div><div class="btns"><div class="seg" role="group" aria-label="들을 소리"><button type="button" data-action="mode" data-mode="model" aria-pressed="${mode === "model"}">모델</button><button type="button" data-action="mode" data-mode="mine" aria-pressed="${mode === "mine"}" ${clip ? "" : "disabled"}>내 목소리</button><button type="button" data-action="mode" data-mode="alt" aria-pressed="${mode === "alt"}" ${clip ? "" : "disabled"}>${I.swap}번갈아</button></div><button class="btn line" type="button" data-action="download" ${clip ? "" : "disabled"}>${I.down}녹음 저장</button></div><p class="empty">받은 파일은 튜터에게 보낼 수 있어요. 새로고침하면 이 녹음은 사라집니다.</p></section>`;
+  const mode = clip ? ui.playMode : "model";
+  const playLabel = mode === "model" ? "모델 음성 재생" : mode === "alt" ? "모델과 내 녹음 번갈아 재생" : "내 녹음 재생";
+  return `<section class="card mine" aria-label="내 녹음"><div class="card-h"><h2>내 녹음</h2>${clip ? `<span class="tag plain" style="margin-left:auto">${esc(clock((clip.seconds || 0) * 1000))}</span>` : ""}</div><div class="wavebox"><button class="icon-btn" type="button" data-action="play-selected" aria-label="${playLabel}" ${!session && (clip || mode === "model") ? "" : "disabled"} style="background:var(--c-s); color:var(--c-t); border-radius:50%">${I.play}</button><div class="mini" aria-hidden="true">${bars(28)}</div></div><div class="btns"><div class="seg" role="group" aria-label="들을 소리"><button type="button" data-action="mode" data-mode="model" aria-pressed="${mode === "model"}">모델</button><button type="button" data-action="mode" data-mode="mine" aria-pressed="${mode === "mine"}" ${clip ? "" : "disabled"}>내 목소리</button><button type="button" data-action="mode" data-mode="alt" aria-pressed="${mode === "alt"}" ${clip ? "" : "disabled"}>${I.swap}번갈아</button></div><button class="btn line" type="button" data-action="download" ${clip ? "" : "disabled"}>${I.down}녹음 저장</button></div><p class="empty">받은 파일은 튜터에게 보낼 수 있어요. 새로고침하면 이 녹음은 사라집니다.</p></section>`;
 }
 
 function recentCard(attempts, best) {
@@ -429,6 +431,7 @@ function recentCard(attempts, best) {
 function paint() {
   const root = document.getElementById("app");
   if (!root) return;
+  const scrollTop = root.querySelector(".main")?.scrollTop || 0;
   const model = screenModel();
   if (model.kind === "practice") {
     const current = { trackId: model.track.id, lessonId: model.lesson.id, index: model.index };
@@ -445,6 +448,7 @@ function paint() {
   else if (model.kind === "stats") root.innerHTML = viewStats();
   else if (model.kind === "practice") root.innerHTML = viewPractice(model);
   else root.innerHTML = viewMissing();
+  root.querySelector(".main").scrollTop = scrollTop;
   ensureTicker();
   if (ui.offerManual || ui.result?.evaluation?.manual) revealSelfCheck();
 }
@@ -475,7 +479,7 @@ function activeSentence() {
 }
 
 function stopSpeaking() {
-  cancelSpeak = true;
+  speechTurn += 1;
   ui.altAfter = false;
   try { speakHandle?.cancel(); } catch { /* ignore */ }
   speakHandle = null;
@@ -508,12 +512,12 @@ function onListen(model, mode = "model") {
     paint();
     return;
   }
-  if (ui.phase === "recording" || ui.phase === "processing") return;
+  if (session) return;
   if (mode === "mine") {
-    document.getElementById("clip")?.play?.();
+    playClip();
     return;
   }
-  cancelSpeak = false;
+  const turn = ++speechTurn;
   ui.altAfter = mode === "alt";
   const voice = pickVoice(window.speechSynthesis?.getVoices?.() || [], model.track.lang);
   ui.phase = "speaking";
@@ -527,15 +531,15 @@ function onListen(model, mode = "model") {
     rate: speedChoice(progress.speed) >= 0.9 ? 1 : 0.7,
     voice,
     onend: () => {
-      if (cancelSpeak) return;
-      const audio = ui.altAfter ? document.getElementById("clip") : null;
+      if (turn !== speechTurn) return;
+      const playNext = ui.altAfter;
       ui.altAfter = false;
       ui.phase = "idle";
       paint();
-      audio?.play?.();
+      if (playNext) playClip();
     },
     onerror: () => {
-      if (cancelSpeak) return;
+      if (turn !== speechTurn) return;
       ui.phase = "idle";
       ui.altAfter = false;
       ui.error = "목소리 재생에 실패했습니다.";
@@ -549,6 +553,15 @@ function onListen(model, mode = "model") {
     return;
   }
   speakHandle = handle;
+}
+
+function playClip() {
+  const audio = document.getElementById("clip");
+  audio?.play().catch(() => {
+    if (!audio.isConnected) return;
+    ui.error = "녹음을 재생하지 못했어요. 내 녹음 버튼을 다시 눌러 주세요.";
+    paint();
+  });
 }
 
 function beginTake(model, { recognition, recording }) {
@@ -569,23 +582,29 @@ function beginTake(model, { recognition, recording }) {
       : null,
   });
   session = take;
-  ui.phase = "recording";
-  ui.startedAt = Date.now();
+  ui.phase = "preparing";
+  ui.startedAt = 0;
   ui.heard = "";
   ui.error = "";
   ui.result = null;
   ui.offerManual = false;
   paint();
   take.onPhase((phase) => {
-    if (session !== take || phase !== "processing" || ui.phase === "processing") return;
-    ui.phase = "processing";
+    if (session !== take || (phase !== "recording" && phase !== "processing")) return;
+    ui.phase = phase;
+    if (phase === "recording") ui.startedAt = Date.now();
     paint();
   });
   take.start();
   take.finished.then((result) => {
     if (session !== take || result?.ignored) return;
     session = null;
-    applyTakeResult(model, result);
+    if (result.reason === "stop" && !ui.startedAt && !result.micError) {
+      ui.phase = "idle";
+      paint();
+      return;
+    }
+    applyTakeResult(model, result, recognition);
   });
 }
 
@@ -609,7 +628,7 @@ function onRecord(model) {
   beginTake(model, { recognition: false, recording: true });
 }
 
-function applyTakeResult(model, result) {
+function applyTakeResult(model, result, recognition) {
   const seconds = ui.startedAt ? (Date.now() - ui.startedAt) / 1000 : 0;
   ui.phase = "idle";
   if (result?.clip?.blob) saveClip(model.sentence.id, result.clip, seconds);
@@ -639,6 +658,7 @@ function applyTakeResult(model, result) {
       : result?.clip?.blob
         ? "말을 알아듣지 못했어요. 녹음을 듣고 스스로 점수를 남겨 주세요."
         : "말을 알아듣지 못했어요. 스스로 점수를 남겨 주세요.";
+    if (result?.clip?.blob && !recognition) ui.error = "";
     if (!result?.clip?.blob && result?.micError) ui.error = micErrorMessage(result.micError);
   }
   paint();
@@ -718,7 +738,7 @@ function onClick(event) {
   else if (action === "rate") onRate(model, button.dataset.score);
   else if (action === "download") onDownload(model);
   else if (action === "play-mine") onListen(model, "mine");
-  else if (action === "play-selected") onListen(model, ui.playMode);
+  else if (action === "play-selected") onListen(model, clips.has(model.sentence.id) ? ui.playMode : "model");
 }
 
 function boot() {
@@ -726,6 +746,15 @@ function boot() {
   const root = document.getElementById("app");
   root.classList.add("sy");
   root.addEventListener("click", onClick);
+  window.addEventListener("pagehide", () => {
+    stopSpeaking();
+    abandonSession();
+    window.clearInterval(ticker);
+    document.getElementById("clip")?.pause();
+  });
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) paint();
+  });
   window.addEventListener("hashchange", () => {
     stopSpeaking();
     abandonSession();

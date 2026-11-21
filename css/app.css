@@ -76,7 +76,7 @@ audio.clip { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-ev
 .sy *, .sy *::before, .sy *::after { box-sizing: border-box; }
 .sy h1, .sy h2, .sy h3, .sy p, .sy ul, .sy ol { margin: 0; padding: 0; }
 .sy ul, .sy ol { list-style: none; }
-.sy button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; padding: 0; }
+.sy :where(button) { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; padding: 0; }
 .sy a { color: inherit; text-decoration: none; }
 .sy :focus-visible { outline: 2px solid var(--c-d); outline-offset: 2px; border-radius: 10px; }
 .sy .jp { font-family: var(--f-jp); }
@@ -213,6 +213,7 @@ audio.clip { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-ev
 .live .wave { display: flex; align-items: center; gap: 3px; height: 28px; flex: 1 1 auto; }
 .live .wave i { width: 4px; border-radius: 2px; background: currentColor; animation: sy-bar 0.9s ease-in-out infinite alternate; }
 @keyframes sy-bar { from { transform: scaleY(0.45); } to { transform: scaleY(1); } }
+.live.waiting { background: var(--sub); color: var(--ink); }
 .live .time { font-variant-numeric: tabular-nums; }
 .res-top { display: flex; align-items: center; gap: 14px; }
 .ring { width: 76px; height: 76px; position: relative; flex-shrink: 0; }

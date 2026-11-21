@@ -109,16 +109,17 @@ export function runRecognition({ Recognition, lang, continuous = false, onPartia
     onEnd?.();
   };
   const onResult = (event) => {
-    let nextFinal = "";
-    let nextInterim = "";
+    const nextFinal = [];
+    const nextInterim = [];
     const results = event?.results || [];
     for (let index = 0; index < results.length; index += 1) {
       const piece = results[index]?.[0]?.transcript || "";
-      if (results[index].isFinal) nextFinal += piece;
-      else nextInterim += piece;
+      if (results[index].isFinal) nextFinal.push(piece.trim());
+      else nextInterim.push(piece.trim());
     }
-    finalText = nextFinal.trim();
-    interim = nextInterim.trim();
+    const separator = /^en\b/i.test(lang) ? " " : "";
+    finalText = nextFinal.join(separator).trim();
+    interim = nextInterim.join(separator).trim();
     const live = `${finalText} ${interim}`.replace(/\s+/g, " ").trim();
     if (live) onPartial?.(live);
   };
@@ -131,10 +132,6 @@ export function runRecognition({ Recognition, lang, continuous = false, onPartia
   recognition.addEventListener("error", onRecognitionError);
   recognition.addEventListener("end", finish);
   recognition.addEventListener("nomatch", () => onRecognitionError({ error: "no-match" }));
-  recognition.onresult = onResult;
-  recognition.onerror = onRecognitionError;
-  recognition.onend = finish;
-  recognition.onnomatch = () => onRecognitionError({ error: "no-match" });
   try {
     recognition.start();
   } catch (error) {

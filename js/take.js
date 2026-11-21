@@ -87,6 +87,16 @@ export function createTake({
     phaseListeners.forEach((listener) => listener(next));
   }
 
+  function startListening() {
+    setPhase("recording");
+    maxTimer = setTimeout(() => { requestFinish("max"); }, maxMs);
+  }
+
+  function micFailed(cause) {
+    micError = cause;
+    if (!recHandle?.ok && !finishStarted) requestFinish("error");
+  }
+
   async function requestFinish(reason) {
     if (finishPromise) return finishPromise;
     finishStarted = true;
@@ -119,7 +129,8 @@ export function createTake({
     get phase() { return phase; },
     onPhase(listener) { phaseListeners.add(listener); },
     start() {
-      setPhase("recording");
+      if (phase !== "idle") return;
+      setPhase("preparing");
       if (typeof Recognition === "function") {
         recHandle = runRecognition({
           Recognition,
@@ -139,6 +150,7 @@ export function createTake({
         });
         if (!recHandle.ok) error = error || "start-failed";
       }
+      if (recHandle?.ok && !finishStarted) startListening();
       if (wantRecording && openMic && !finishStarted) {
         openMic().then((nextStream) => {
           if (finishStarted || ignored) {
@@ -153,24 +165,25 @@ export function createTake({
               stopTracks(nextStream);
               recorder = null;
               stream = null;
-            }
+            } else if (phase === "preparing") startListening();
           } catch (startError) {
-            micError = startError;
             stopTracks(nextStream);
             stream = null;
+            micFailed(startError);
           }
-        }).catch((openError) => {
-          micError = openError;
-        });
+        }).catch(micFailed);
       }
-      if (!finishStarted) maxTimer = setTimeout(() => { requestFinish("max"); }, maxMs);
-      if (!Recognition && !wantRecording) requestFinish("empty");
+      if (!recHandle?.ok && !(wantRecording && openMic) && !finishStarted) requestFinish("empty");
     },
     finished,
     stop() { return requestFinish("stop"); },
     cancel() {
       ignored = true;
-      return requestFinish("cancel");
+      const cleanup = requestFinish("cancel");
+      try { recHandle?.abort(); } catch { /* already stopped */ }
+      stopTracks(stream);
+      stream = null;
+      return cleanup;
     },
   };
 }

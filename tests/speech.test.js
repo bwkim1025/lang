@@ -83,6 +83,23 @@ test("an interim result is kept when the browser never marks it final", () => {
   assert.equal(finalText, "right the light");
 });
 
+test("English recognition chunks preserve the boundary between words", () => {
+  class MultipleResults extends MockRecognition {
+    start() {
+      const chunks = ["Turn", "right"].map((transcript) => {
+        const item = [{ transcript }];
+        item.isFinal = true;
+        return item;
+      });
+      this.dispatchEvent(new ResultEvent(chunks));
+      this.dispatchEvent(new Event("end"));
+    }
+  }
+  let finalText;
+  runRecognition({ Recognition: MultipleResults, lang: "en-US", onFinal: (text) => { finalText = text; } });
+  assert.equal(finalText, "Turn right");
+});
+
 test("unsupported recognition and error codes stay in Korean", () => {
   const missing = runRecognition({ Recognition: null, lang: "en-US" });
   assert.equal(missing.ok, false);
