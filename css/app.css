@@ -330,8 +330,9 @@ audio.clip { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-ev
 
 /* ============================================================
    넓은 PC (스터디 앱 v3.5와 같은 방식). 1599px 이하는 이 블록의 영향이 없다.
-   - 1600px 이상: 본문 폭 상한을 없애고 2열. 글이 있는 열은 한 줄 길이를 유지하고, 남는 폭은 옆 열이 채운다.
-   - 2400px 이상: 3열. 레슨 목록, 다음 문장, 최근 기록이 빈칸 없이 옆을 채운다.
+   - 1600px 이상: 본문 폭 상한을 없애고 2열(fr 비율). 글은 한 줄 길이(40em)를 유지한다.
+   - 1920px 이상: 3열(fr 비율). 레슨 목록, 다음 문장, 최근 기록이 빈칸 없이 옆을 채운다.
+   - 2400px 이상: 같은 3열에 여백·간격만 넓힌다.
    - 3200–4799px: 본문 글자만 한 단계 키움. 4800px 이상에서는 이 규칙을 쓰지 않는다.
    - 4800px 이상: 화면을 확대해 2560 구성을 유지. 미디어쿼리는 실제 뷰포트 폭을 보므로 초광폭 규칙은 4799px에서 끊는다.
      4800–6399 zoom 2, 6400–7679 zoom 2.5, 7680 이상 zoom 3 (7680 → 2560).
@@ -343,31 +344,34 @@ audio.clip { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-ev
   .wrap { max-width: none; margin-inline: 0; }
   .mean, .hint, .cmp-txt, .empty, .banner .tx { max-width: 40em; }
   .chart .col i { max-width: 44px; }
-  .home { grid-template-columns: minmax(0, 760px) minmax(340px, 1fr); }
-  .lesson-wrap { grid-template-columns: minmax(300px, 1fr) minmax(0, 760px); }
-  .stats { grid-template-columns: minmax(360px, 1fr) minmax(0, 720px); }
+  .home { grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr); }
+  .lesson-wrap { grid-template-columns: minmax(300px, 1fr) minmax(0, 1.4fr); }
+  .stats { grid-template-columns: minmax(340px, 1fr) minmax(0, 1.25fr); }
   .prac {
-    grid-template-columns: minmax(0, 760px) minmax(340px, 1fr);
+    grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr);
     grid-template-areas: "head head" "banner banner" "sent side" "act side";
   }
   .prac:not(:has(.banner)) { grid-template-areas: "head head" "sent side" "act side"; }
   .side-stack { display: flex; flex-direction: column; gap: 20px; grid-area: side; min-width: 0; }
 }
-@media (min-width: 2400px) {
-  .wrap { padding: 32px 48px 48px; gap: 24px; }
-  .rail { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
-  .home { grid-template-columns: minmax(280px, 0.9fr) minmax(0, 800px) minmax(320px, 1fr); gap: 24px; }
-  .lesson-wrap { grid-template-columns: minmax(280px, 0.9fr) minmax(0, 800px) minmax(300px, 1fr); gap: 24px; }
-  .stats { grid-template-columns: minmax(320px, 1.15fr) minmax(0, 800px) minmax(300px, 1fr); gap: 24px; }
+/* 1920px 이상: 3열(레일 + 본문 + 옆 열). 열 폭은 fr 비율로 화면을 채운다. */
+@media (min-width: 1920px) {
+  .rail { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+  .home { grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.5fr) minmax(300px, 1fr); }
+  .lesson-wrap { grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.5fr) minmax(280px, 1fr); }
+  .stats { grid-template-columns: minmax(300px, 1.1fr) minmax(0, 1.5fr) minmax(280px, 1fr); }
   .prac {
-    grid-template-columns: minmax(280px, 0.85fr) minmax(0, 800px) minmax(320px, 1fr);
+    grid-template-columns: minmax(260px, 0.85fr) minmax(0, 1.5fr) minmax(300px, 1fr);
     grid-template-areas: "rail head head" "rail banner banner" "rail sent side" "rail act side";
-    gap: 24px;
   }
   .prac:not(:has(.banner)) { grid-template-areas: "rail head head" "rail sent side" "rail act side"; }
   .prac-rail { grid-area: rail; }
   .prac-rail .row[aria-current="true"] { background: var(--c-s); margin-inline: -8px; padding-inline: 8px; border-radius: 12px; }
-  .side-stack { gap: 24px; }
+}
+@media (min-width: 2400px) {
+  .wrap { padding: 32px 48px 48px; gap: 24px; }
+  .rail, .side-stack { gap: 24px; }
+  .home, .lesson-wrap, .stats, .prac { gap: 24px; }
 }
 @media (min-width: 3200px) and (max-width: 4799.98px) {
   .wrap { padding: 40px 64px 56px; gap: 28px; }
